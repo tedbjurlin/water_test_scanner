@@ -31,22 +31,28 @@ struct DetectionResult
     ColorOutput *color15;
     ColorOutput *color16;
 
+    int32_t width;
+
+    int32_t height;
+
+    int32_t buffer_size;
+
+    uint8_t * image;
+
     int32_t exitCode;
     
-};
-
-struct Result {
-    DetectionResult *result;
-    cv::Mat image;
 };
 
 extern "C"
 struct ColorOutput createColorOutput(cv::Scalar color, int idx, double value);
 
 extern "C"
-struct DetectionResult *create_detection_result(std::vector<ColorOutput> array, int exit_code);
+struct DetectionResult *create_detection_result(std::vector<ColorOutput> array, int32_t width, int32_t height, int32_t buffer_size, uint8_t *image, int exit_code);
 
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
-struct DetectionResult *native_detect_colors(char *str);
+int encodeIm(int width, int height, uchar *rawBytes, uchar **encodedOutput);
+
+extern "C" __attribute__((visibility("default"))) __attribute__((used))
+struct DetectionResult *native_detect_colors(uint8_t *img_bytes, int32_t *iwidth, int32_t *iheight, uint8_t *key_bytes, int32_t *width, int32_t *height, bool *isYUV);
 
 #endif
