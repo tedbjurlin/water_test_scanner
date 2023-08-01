@@ -3,7 +3,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
 
-final class ColorOutput extends Struct {
+final class NativeColorOutput extends Struct {
   @Int32()
   external int idx;
 
@@ -19,9 +19,9 @@ final class ColorOutput extends Struct {
   @Double()
   external double value;
 
-  factory ColorOutput.allocate(
+  factory NativeColorOutput.allocate(
           int idx, int red, int green, int blue, double value) =>
-      calloc<ColorOutput>().ref
+      calloc<NativeColorOutput>().ref
         ..idx = idx
         ..red = red
         ..green = green
@@ -40,44 +40,72 @@ final class ColorOutput extends Struct {
   }
 }
 
+class ColorOutput {
+  ColorOutput(
+      {required this.idx,
+      required this.red,
+      required this.green,
+      required this.blue,
+      required this.value});
+
+  int idx;
+
+  int red;
+
+  int green;
+
+  int blue;
+
+  double value;
+}
+
+ColorOutput fromNativeColorOutput(NativeColorOutput out) {
+  return ColorOutput(
+      idx: out.idx,
+      red: out.red,
+      green: out.green,
+      blue: out.blue,
+      value: out.value);
+}
+
 final class NativeDetectorResult extends Struct {
-  external Pointer<ColorOutput> color1;
-  external Pointer<ColorOutput> color2;
-  external Pointer<ColorOutput> color3;
-  external Pointer<ColorOutput> color4;
-  external Pointer<ColorOutput> color5;
-  external Pointer<ColorOutput> color6;
-  external Pointer<ColorOutput> color7;
-  external Pointer<ColorOutput> color8;
-  external Pointer<ColorOutput> color9;
-  external Pointer<ColorOutput> color10;
-  external Pointer<ColorOutput> color11;
-  external Pointer<ColorOutput> color12;
-  external Pointer<ColorOutput> color13;
-  external Pointer<ColorOutput> color14;
-  external Pointer<ColorOutput> color15;
-  external Pointer<ColorOutput> color16;
+  external Pointer<NativeColorOutput> color1;
+  external Pointer<NativeColorOutput> color2;
+  external Pointer<NativeColorOutput> color3;
+  external Pointer<NativeColorOutput> color4;
+  external Pointer<NativeColorOutput> color5;
+  external Pointer<NativeColorOutput> color6;
+  external Pointer<NativeColorOutput> color7;
+  external Pointer<NativeColorOutput> color8;
+  external Pointer<NativeColorOutput> color9;
+  external Pointer<NativeColorOutput> color10;
+  external Pointer<NativeColorOutput> color11;
+  external Pointer<NativeColorOutput> color12;
+  external Pointer<NativeColorOutput> color13;
+  external Pointer<NativeColorOutput> color14;
+  external Pointer<NativeColorOutput> color15;
+  external Pointer<NativeColorOutput> color16;
 
   @Int32()
   external int exitCode;
 
   factory NativeDetectorResult.allocate(
-          Pointer<ColorOutput> color1,
-          Pointer<ColorOutput> color2,
-          Pointer<ColorOutput> color3,
-          Pointer<ColorOutput> color4,
-          Pointer<ColorOutput> color5,
-          Pointer<ColorOutput> color6,
-          Pointer<ColorOutput> color7,
-          Pointer<ColorOutput> color8,
-          Pointer<ColorOutput> color9,
-          Pointer<ColorOutput> color10,
-          Pointer<ColorOutput> color11,
-          Pointer<ColorOutput> color12,
-          Pointer<ColorOutput> color13,
-          Pointer<ColorOutput> color14,
-          Pointer<ColorOutput> color15,
-          Pointer<ColorOutput> color16,
+          Pointer<NativeColorOutput> color1,
+          Pointer<NativeColorOutput> color2,
+          Pointer<NativeColorOutput> color3,
+          Pointer<NativeColorOutput> color4,
+          Pointer<NativeColorOutput> color5,
+          Pointer<NativeColorOutput> color6,
+          Pointer<NativeColorOutput> color7,
+          Pointer<NativeColorOutput> color8,
+          Pointer<NativeColorOutput> color9,
+          Pointer<NativeColorOutput> color10,
+          Pointer<NativeColorOutput> color11,
+          Pointer<NativeColorOutput> color12,
+          Pointer<NativeColorOutput> color13,
+          Pointer<NativeColorOutput> color14,
+          Pointer<NativeColorOutput> color15,
+          Pointer<NativeColorOutput> color16,
           int exitCode) =>
       calloc<NativeDetectorResult>().ref
         ..color1 = color1
@@ -149,22 +177,22 @@ class ColorStripDetector {
     print(detectionResult);
 
     return ColorDetectionResult(colors: [
-      detectionResult.color1.ref,
-      detectionResult.color2.ref,
-      detectionResult.color3.ref,
-      detectionResult.color4.ref,
-      detectionResult.color5.ref,
-      detectionResult.color6.ref,
-      detectionResult.color7.ref,
-      detectionResult.color8.ref,
-      detectionResult.color9.ref,
-      detectionResult.color10.ref,
-      detectionResult.color11.ref,
-      detectionResult.color12.ref,
-      detectionResult.color13.ref,
-      detectionResult.color14.ref,
-      detectionResult.color15.ref,
-      detectionResult.color16.ref,
+      fromNativeColorOutput(detectionResult.color1.ref),
+      fromNativeColorOutput(detectionResult.color2.ref),
+      fromNativeColorOutput(detectionResult.color3.ref),
+      fromNativeColorOutput(detectionResult.color4.ref),
+      fromNativeColorOutput(detectionResult.color5.ref),
+      fromNativeColorOutput(detectionResult.color6.ref),
+      fromNativeColorOutput(detectionResult.color7.ref),
+      fromNativeColorOutput(detectionResult.color8.ref),
+      fromNativeColorOutput(detectionResult.color9.ref),
+      fromNativeColorOutput(detectionResult.color10.ref),
+      fromNativeColorOutput(detectionResult.color11.ref),
+      fromNativeColorOutput(detectionResult.color12.ref),
+      fromNativeColorOutput(detectionResult.color13.ref),
+      fromNativeColorOutput(detectionResult.color14.ref),
+      fromNativeColorOutput(detectionResult.color15.ref),
+      fromNativeColorOutput(detectionResult.color16.ref),
     ], exitCode: detectionResult.exitCode);
   }
 
