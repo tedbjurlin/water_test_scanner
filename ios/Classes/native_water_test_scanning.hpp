@@ -35,11 +35,6 @@ struct DetectionResult
     
 };
 
-struct Result {
-    DetectionResult *result;
-    cv::Mat image;
-};
-
 extern "C"
 struct ColorOutput createColorOutput(cv::Scalar color, int idx, double value);
 

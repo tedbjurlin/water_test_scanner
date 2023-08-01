@@ -6,15 +6,177 @@
 
 using namespace cv;
 using namespace std;
+using namespace cv::aruco;
 
-Scalar ScalarBGR2Lab(uchar B, uchar G, uchar R) {
+vector<float> TestScanner::cumsum(Mat src) {
+    vector<float> sum(src.size().height);
+    sum[0] = src.at<float>(0);
+    for (unsigned int i = 1; i < src.size().height; i++) {
+        sum[i] = src.at<float>(i) + sum[i-1];
+    }
+
+    return sum;
+}
+
+vector<float> TestScanner::calculate_cdf(Mat histogram) {
+    vector<float> cdf = cumsum(histogram);
+
+
+    for (unsigned int i = 0; i < cdf.size(); i++)
+    {
+        cdf[i] = cdf[i] / cdf[cdf.size() - 1];
+    }
+
+    return cdf;
+}
+
+vector<int> calculate_lookup(vector<float> src, vector<float> ref)
+{
+    vector<int> lookup_table(256);
+    int lookup_value = 0;
+    for (int i = 0; i < src.size(); i++)
+    {
+        for (int j = 0; j < ref.size(); j++) {
+            if (ref[j] >= src[i])
+            {
+                lookup_value = j;
+                break;
+            }
+        }
+        lookup_table[i] = lookup_value;
+    }
+    return lookup_table;
+}
+
+Mat TestScanner::match_histograms(Mat input_image, Mat base_ref, Mat current_ref)
+{
+    Mat src_bands[3], base_bands[3], curr_bands[3];
+    split(input_image, src_bands);
+    split(base_ref, base_bands);
+    split(current_ref, curr_bands);
+    
+    int histSize = 256;
+
+    float range[] = { 0, 256 }; //the upper boundary is exclusive
+    const float* histRange[] = { range };
+    
+    bool uniform = true, accumulate =  false;
+
+    Mat base_blue_hist, base_green_hist, base_red_hist, curr_blue_hist, curr_green_hist, curr_red_hist;
+    calcHist( &base_bands[0], 1, 0, Mat(), base_blue_hist, 1, &histSize, histRange, uniform, accumulate );
+    calcHist( &base_bands[1], 1, 0, Mat(), base_green_hist, 1, &histSize, histRange, uniform, accumulate );
+    calcHist( &base_bands[2], 1, 0, Mat(), base_red_hist, 1, &histSize, histRange, uniform, accumulate );
+    calcHist( &curr_bands[0], 1, 0, Mat(), curr_blue_hist, 1, &histSize, histRange, uniform, accumulate );
+    calcHist( &curr_bands[1], 1, 0, Mat(), curr_green_hist, 1, &histSize, histRange, uniform, accumulate );
+    calcHist( &curr_bands[2], 1, 0, Mat(), curr_red_hist, 1, &histSize, histRange, uniform, accumulate );
+ 
+    vector<float> src_cdf_blue = calculate_cdf(base_blue_hist);
+    vector<float> src_cdf_green = calculate_cdf(base_green_hist);
+    vector<float> src_cdf_red = calculate_cdf(base_red_hist);
+    vector<float> ref_cdf_blue = calculate_cdf(curr_blue_hist);
+    vector<float> ref_cdf_green = calculate_cdf(curr_green_hist);
+    vector<float> ref_cdf_red = calculate_cdf(curr_red_hist);
+ 
+    vector<int> blue_lookup_table = calculate_lookup(src_cdf_blue, ref_cdf_blue);
+    vector<int> green_lookup_table = calculate_lookup(src_cdf_green, ref_cdf_green);
+    vector<int> red_lookup_table = calculate_lookup(src_cdf_red, ref_cdf_red);
+
+    vector<Mat> res_bands {src_bands[0].clone(), src_bands[1].clone(), src_bands[2].clone()};
+    LUT(src_bands[0], blue_lookup_table, res_bands[0]);
+    LUT(src_bands[1], green_lookup_table, res_bands[1]);
+    LUT(src_bands[2], red_lookup_table, res_bands[2]);
+
+    Mat res;
+    merge(res_bands, res);
+
+    convertScaleAbs(res, res);
+
+    return res;
+}
+
+int TestScanner::searchResult(vector<int> arr, int k){
+    vector<int>::iterator it;
+    it = find(arr.begin(), arr.end(), k);
+    if(it != arr.end())
+        return (it - arr.begin());
+    else
+        return -1;
+}
+
+bool TestScanner::find_color_card(Mat img, Mat outputImg, vector<vector<Point2f>> markerCorners, vector<int> markerIds)
+{
+    Dictionary arucoDict = getPredefinedDictionary(DICT_4X4_250);
+
+    DetectorParameters parameters = DetectorParameters();
+
+    vector<vector< Point2f>> rejectedCandidates;
+
+    ArucoDetector detector(arucoDict, parameters);
+
+    detector.detectMarkers(img, markerCorners, markerIds, rejectedCandidates);
+
+    int topLeftIdx = searchResult(markerIds, 23);
+    int topRightIdx = searchResult(markerIds, 42);
+    int bottomRightIdx = searchResult(markerIds, 15);
+    int bottomLeftIdx = searchResult(markerIds, 67);
+
+    Point2f topLeft;
+    Point2f topRight;
+    Point2f bottomRight;
+    Point2f bottomLeft;
+
+    if (topLeftIdx != -1 && topRightIdx != -1 && bottomRightIdx != -1 && bottomLeftIdx != -1)
+    {
+        topLeft = markerCorners.at(topLeftIdx).at(0);
+        topRight = markerCorners.at(topRightIdx).at(1);
+        bottomRight = markerCorners.at(bottomRightIdx).at(2);
+        bottomLeft = markerCorners.at(bottomLeftIdx).at(3);
+    } else {
+        return false;
+    }
+
+    vector<Point2f> pts(4);
+    vector<Point2f> dst(4);
+
+    pts[0] = topLeft;
+    pts[1] = topRight;
+    pts[2] = bottomRight;
+    pts[3] = bottomLeft;
+
+    dst[0].x = 0;
+    dst[0].y = 0;
+    dst[1].x = 160;
+    dst[1].y = 0;
+    dst[2].x = 160;
+    dst[2].y = 710;
+    dst[3].x = 0;
+    dst[3].y = 710;
+
+    Mat pTrans;
+    pTrans = getPerspectiveTransform(pts, dst);
+
+    Mat warped_img;
+    warpPerspective(img, warped_img, pTrans, Size(160, 710));
+
+    // 160 x 710
+
+    // clockwise: 23, 42, 15, 67
+
+    warped_img.copyTo(outputImg);
+
+    return true;
+
+    
+}
+
+Scalar TestScanner::ScalarBGR2Lab(uchar B, uchar G, uchar R) {
     Mat lab;
     Mat bgr(1,1, CV_8UC3, Scalar(B, G, R));
     cvtColor(bgr, lab, COLOR_BGR2Lab);
     return Scalar(lab.data[0], lab.data[1], lab.data[2]);
 }
 
-double getClosest(Scalar value, vector<Scalar> key, vector<double> values)
+double TestScanner::getClosest(Scalar value, vector<Scalar> key, vector<double> values)
 {
     Mat vmat = Mat::zeros(Size(1, 1), CV_32FC3);
     vmat.setTo(value);
@@ -36,7 +198,7 @@ double getClosest(Scalar value, vector<Scalar> key, vector<double> values)
     return values[idx];
 }
 
-bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *vertices){
+bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *vertices, double height){
     
     list<RotatedRect> boxes;
     
@@ -48,8 +210,9 @@ bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *v
         double exp = 0.037037;
 
         double act = box.size.aspectRatio();
+        double boxheight = box.size.height;
 
-        if ((2 * min(exp, act)) / (exp + act) > 0.90)
+        if (((2 * min(exp, act)) / (exp + act) > 0.90) && ((2 * min(height, boxheight)) / (height + boxheight) > 0.90))
         {
             boxes.push_back(box);
         }
@@ -74,12 +237,66 @@ bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *v
     return true;
 }
 
-Result TestScanner::detect_colors(Mat img, vector<ColorOutput> colors)
+DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput> colors)
 {
-    resize(img, img, Size(img.size().width / 4, img.size().height / 4), INTER_LINEAR);
+    Mat outputImg = Mat::zeros(Size(160, 710), img.type());
+
+
+    vector<vector<Point2f>> markerCorners;
+    vector<int> markerIds;
+    bool result = find_color_card(img, outputImg, markerCorners, markerIds);
+
+    if (!result)
+    {
+        for (int i = 0; i < 16; i++) {
+            colors[i] = createColorOutput(Scalar(), i, -1.0);
+        }
+
+        // uchar *image = img.isContinuous()? img.data: img.clone().data;
+
+        return create_detection_result(colors, 3);
+    }
+
+    int topLeftIdx = searchResult(markerIds, 23);
+    int topRightIdx = searchResult(markerIds, 42);
+    int bottomRightIdx = searchResult(markerIds, 15);
+    int bottomLeftIdx = searchResult(markerIds, 67);
+
+    Point2f topLeft = markerCorners.at(topLeftIdx).at(0);
+    Point2f topRight = markerCorners.at(topRightIdx).at(1);
+    Point2f bottomRight = markerCorners.at(bottomRightIdx).at(2);
+    Point2f bottomLeft = markerCorners.at(bottomLeftIdx).at(3);
+
+    vector<Point> poly_points(4);
+
+    vector<double> src1 = {topLeft.x, topLeft.y};
+    vector<double> src2 = {topRight.x, topRight.y};
+    vector<double> src3 = {bottomRight.x, bottomRight.y};
+
+    int padding = static_cast<int>(0.15 * norm(src1, src2, NORM_L2));
+
+    poly_points[0].x = static_cast<int>(topLeft.x - padding);
+    poly_points[0].y = static_cast<int>(topLeft.y - padding);
+    poly_points[1].x = static_cast<int>(topRight.x + padding);
+    poly_points[1].y = static_cast<int>(topRight.y - padding);
+    poly_points[2].x = static_cast<int>(bottomRight.x + padding);
+    poly_points[2].y = static_cast<int>(bottomRight.y + padding);
+    poly_points[3].x = static_cast<int>(bottomLeft.x - padding);
+    poly_points[3].y = static_cast<int>(bottomLeft.y + padding);
+
+    Mat nokeyimg = img.clone();
+
+    line(img, poly_points[0], poly_points[1], Scalar(0, 255, 0), 2);
+    line(img, poly_points[1], poly_points[2], Scalar(0, 255, 0), 2);
+    line(img, poly_points[2], poly_points[3], Scalar(0, 255, 0), 2);
+    line(img, poly_points[3], poly_points[0], Scalar(0, 255, 0), 2);
+
+    fillPoly(nokeyimg, poly_points, Scalar());
+
+    resize(nokeyimg, nokeyimg, Size(nokeyimg.size().width / 4, nokeyimg.size().height / 4), INTER_LINEAR);
 
     Mat img_gray;
-    cvtColor(img, img_gray, COLOR_BGR2GRAY);
+    cvtColor(nokeyimg, img_gray, COLOR_BGR2GRAY);
 
     Mat img_filtered;
     bilateralFilter(img_gray, img_filtered, 5, 40, 40);
@@ -94,13 +311,12 @@ Result TestScanner::detect_colors(Mat img, vector<ColorOutput> colors)
 
     Point2f vertices[4];    
 
-    if (!findBoxFromContours(contours, vertices))
+    if (!findBoxFromContours(contours, vertices, norm(src2, src3, NORM_L2)))
     {
         cerr << "Could not find box" << endl;
-        Result out = Result();
-        out.result = create_detection_result(colors, 1);
-        out.image = img;
-        return out;
+        // uchar *image = img.isContinuous()? img.data: img.clone().data;
+
+        return create_detection_result(colors, 1);
     }
 
     vector<Point2f> pts(4);
@@ -122,6 +338,8 @@ Result TestScanner::detect_colors(Mat img, vector<ColorOutput> colors)
 
     Mat pTrans;
     pTrans = getPerspectiveTransform(pts, dst);
+
+    img = match_histograms(img, outputImg, ref);
 
     Mat warped_img;
     warpPerspective(img, warped_img, pTrans, Size(40, 1080));
@@ -505,9 +723,7 @@ Result TestScanner::detect_colors(Mat img, vector<ColorOutput> colors)
             cv::line(img, vertices[i], vertices[(i + 1) % 4], cv::Scalar(0, 255, 0), 1, 8);
     }
 
+    uchar *image = img.isContinuous()? img.data: img.clone().data;
     
-    Result out = Result();
-    out.result = create_detection_result(colors, 0);
-    out.image = img;
-    return out;
+    return create_detection_result(colors, 0);
 }

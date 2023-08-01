@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart';
 
 final class NativeColorOutput extends Struct {
   @Int32()
@@ -158,23 +159,35 @@ class ColorDetectionResult {
 }
 
 typedef DetectColorsFunction = Pointer<NativeDetectorResult> Function(
-    Pointer<Utf8> x);
+    Pointer<Utf8> x, Pointer<Uint8> key, int width, int height);
+
+typedef NativeDetectColorsFunction = Pointer<NativeDetectorResult> Function(
+    Pointer<Utf8> x, Pointer<Uint8> key, Int32 width, Int32 height);
 
 class ColorStripDetector {
-  static Future<ColorDetectionResult> detectColors(String path) async {
+  static Future<ColorDetectionResult> detectColors(
+      String path, Uint8List ref, int width, int height) async {
     DynamicLibrary nativeColorDetection = _getDynamicLibrary();
 
     print(nativeColorDetection.providesSymbol("native_detect_colors"));
     print(nativeColorDetection.toString());
 
     final detectColors = nativeColorDetection.lookupFunction<
-        DetectColorsFunction, DetectColorsFunction>("native_detect_colors");
+        NativeDetectColorsFunction,
+        DetectColorsFunction>("native_detect_colors");
+
+    final Pointer<Uint8> pointer =
+        malloc.allocate<Uint8>(ref.buffer.lengthInBytes);
+    final pointerList = pointer.asTypedList(ref.buffer.lengthInBytes);
+    pointerList.setAll(0, ref);
 
     NativeDetectorResult detectionResult =
-        detectColors(path.toNativeUtf8()).ref;
+        detectColors(path.toNativeUtf8(), pointer, width, height).ref;
 
     print(detectionResult.exitCode);
     print(detectionResult);
+
+    malloc.free(pointer);
 
     return ColorDetectionResult(colors: [
       fromNativeColorOutput(detectionResult.color1.ref),

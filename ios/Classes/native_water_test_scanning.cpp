@@ -39,9 +39,11 @@ struct DetectionResult *create_detection_result(vector<ColorOutput> array, int e
 }
 
 
-struct DetectionResult *native_detect_colors(char *str)
+struct DetectionResult *native_detect_colors(char *str, uchar *key, int width, int height)
 {
     cv::Mat mat = cv::imread(str);
+
+    cv::Mat ref = cv::Mat(Size(width, height), CV_8UC3, key);
 
     if (mat.size().width == 0 || mat.size().height == 0) {
 
@@ -55,9 +57,7 @@ struct DetectionResult *native_detect_colors(char *str)
     }
 
     vector<ColorOutput> colors(16);
-    Result out = TestScanner::detect_colors(mat, colors);
+    DetectionResult *out = TestScanner::detect_colors(mat, ref, colors);
 
-    cv::imwrite(str, out.image);
-
-    return out.result;
+    return out;
 }
