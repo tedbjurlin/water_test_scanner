@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 final class NativeColorOutput extends Struct {
   @Int32()
@@ -88,6 +89,9 @@ final class NativeDetectorResult extends Struct {
   external Pointer<NativeColorOutput> color16;
 
   @Int32()
+  external int size;
+
+  @Int32()
   external int exitCode;
 
   factory NativeDetectorResult.allocate(
@@ -107,6 +111,7 @@ final class NativeDetectorResult extends Struct {
           Pointer<NativeColorOutput> color14,
           Pointer<NativeColorOutput> color15,
           Pointer<NativeColorOutput> color16,
+          int size,
           int exitCode) =>
       calloc<NativeDetectorResult>().ref
         ..color1 = color1
@@ -125,6 +130,7 @@ final class NativeDetectorResult extends Struct {
         ..color14 = color14
         ..color15 = color15
         ..color16 = color16
+        ..size = size
         ..exitCode = exitCode;
 
   @override
@@ -152,17 +158,25 @@ final class NativeDetectorResult extends Struct {
 }
 
 class ColorDetectionResult {
-  ColorDetectionResult({required this.colors, required this.exitCode});
+  ColorDetectionResult(
+      {required this.colors, required this.image, required this.exitCode});
 
   List<ColorOutput> colors;
+  Image image;
   int exitCode;
 }
 
 typedef DetectColorsFunction = Pointer<NativeDetectorResult> Function(
-    Pointer<Utf8> x, Pointer<Uint8> key, int width, int height);
+    Pointer<Utf8> x,
+    Pointer<Uint8> key,
+    int length,
+    Pointer<Pointer<Uint8>> encodedImage);
 
 typedef NativeDetectColorsFunction = Pointer<NativeDetectorResult> Function(
-    Pointer<Utf8> x, Pointer<Uint8> key, Int32 width, Int32 height);
+    Pointer<Utf8> x,
+    Pointer<Uint8> key,
+    Int32 length,
+    Pointer<Pointer<Uint8>> encodedImage);
 
 class ColorStripDetector {
   static Future<ColorDetectionResult> detectColors(
@@ -181,13 +195,27 @@ class ColorStripDetector {
     final pointerList = pointer.asTypedList(ref.buffer.lengthInBytes);
     pointerList.setAll(0, ref);
 
-    NativeDetectorResult detectionResult =
-        detectColors(path.toNativeUtf8(), pointer, width, height).ref;
+    Pointer<Pointer<Uint8>> encodedImPtr = malloc.allocate(8);
+
+    NativeDetectorResult detectionResult = detectColors(
+            path.toNativeUtf8(), pointer, ref.lengthInBytes, encodedImPtr)
+        .ref;
 
     print(detectionResult.exitCode);
     print(detectionResult);
 
+    Pointer<Uint8> cppPointer = encodedImPtr.elementAt(0).value;
+    Uint8List imageBytes = cppPointer.asTypedList(detectionResult.size);
+
+    Uint8List newImage = Uint8List(imageBytes.length);
+    for (int i = 0; i < imageBytes.length; i++) {
+      newImage[i] = imageBytes[i];
+    }
+    Image image = Image.memory(newImage);
+
     malloc.free(pointer);
+    malloc.free(cppPointer);
+    malloc.free(encodedImPtr);
 
     return ColorDetectionResult(colors: [
       fromNativeColorOutput(detectionResult.color1.ref),
@@ -206,7 +234,7 @@ class ColorStripDetector {
       fromNativeColorOutput(detectionResult.color14.ref),
       fromNativeColorOutput(detectionResult.color15.ref),
       fromNativeColorOutput(detectionResult.color16.ref),
-    ], exitCode: detectionResult.exitCode);
+    ], image: image, exitCode: detectionResult.exitCode);
   }
 
   static DynamicLibrary _getDynamicLibrary() {

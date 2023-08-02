@@ -15,7 +15,7 @@ struct ColorOutput createColorOutput(cv::Scalar color, int idx, double value)
 }
 
 extern "C"
-struct DetectionResult *create_detection_result(vector<ColorOutput> array, int exit_code)
+struct DetectionResult *create_detection_result(vector<ColorOutput> array, int size, int exit_code)
 {
     struct DetectionResult *detectionResult = (struct DetectionResult *)malloc(sizeof(struct DetectionResult));
     detectionResult->color1 = &array[0];
@@ -34,30 +34,40 @@ struct DetectionResult *create_detection_result(vector<ColorOutput> array, int e
     detectionResult->color14 = &array[13];
     detectionResult->color15 = &array[14];
     detectionResult->color16 = &array[15];
+    detectionResult->size = size;
     detectionResult->exitCode = exit_code;
     return detectionResult;
 }
 
 
-struct DetectionResult *native_detect_colors(char *str, uchar *key, int width, int height)
+
+
+struct DetectionResult *native_detect_colors(char *str, uchar *key, int length, uchar **encodedImage)
 {
     cv::Mat mat = cv::imread(str);
 
-    cv::Mat ref = cv::Mat(Size(width, height), CV_8UC3, key);
+    cv::Mat ref = cv::imdecode(cv::Mat(Size(1, length), CV_8UC1, key), cv::IMREAD_COLOR);
 
-    if (mat.size().width == 0 || mat.size().height == 0) {
+    if (mat.size().width == 0 || mat.size().height == 0 || ref.size().width == 0 || ref.size().width == 0) {
 
         vector<ColorOutput> out(16);
 
         for (int i = 0; i < 16; i++) {
-            out[i] = createColorOutput(cv::Scalar(), i, 0);
+            out[i] = createColorOutput(cv::Scalar(), i, 5);
         }
 
-        return create_detection_result(out, 2);
+        vector<uchar> buf;
+
+        cv::imencode(".png", mat, buf);
+
+        *encodedImage = (unsigned char *) malloc(buf.size());
+        for (int i=0; i < buf.size(); i++) (*encodedImage)[i] = buf[i];
+
+        return create_detection_result(out, buf.size(), 2);
     }
 
     vector<ColorOutput> colors(16);
-    DetectionResult *out = TestScanner::detect_colors(mat, ref, colors);
+    DetectionResult *out = TestScanner::detect_colors(mat, ref, colors, encodedImage);
 
     return out;
 }

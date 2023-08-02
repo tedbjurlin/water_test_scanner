@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/types_c.h>
 
+#include <android/log.h>
 
 using namespace cv;
 using namespace std;
@@ -103,17 +104,22 @@ int TestScanner::searchResult(vector<int> arr, int k){
         return -1;
 }
 
-bool TestScanner::find_color_card(Mat img, Mat outputImg, vector<vector<Point2f>> markerCorners, vector<int> markerIds)
+struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
 {
     Dictionary arucoDict = getPredefinedDictionary(DICT_4X4_250);
 
     DetectorParameters parameters = DetectorParameters();
 
-    vector<vector< Point2f>> rejectedCandidates;
+    vector<vector< Point2f>> rejectedCandidates, markerCorners;
+
+    vector<int> markerIds;
 
     ArucoDetector detector(arucoDict, parameters);
 
     detector.detectMarkers(img, markerCorners, markerIds, rejectedCandidates);
+
+    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "Rejected candidates length: %lu", rejectedCandidates.size());
+    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "markerIds length: %lu", markerIds.size());
 
     int topLeftIdx = searchResult(markerIds, 23);
     int topRightIdx = searchResult(markerIds, 42);
@@ -131,8 +137,16 @@ bool TestScanner::find_color_card(Mat img, Mat outputImg, vector<vector<Point2f>
         topRight = markerCorners.at(topRightIdx).at(1);
         bottomRight = markerCorners.at(bottomRightIdx).at(2);
         bottomLeft = markerCorners.at(bottomLeftIdx).at(3);
+
+        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "found points");
     } else {
-        return false;
+        ColorCardResult out;
+
+        out.markerCorners = markerCorners;
+        out.markerIds = markerIds;
+        out.success = false;
+
+        return out;
     }
 
     vector<Point2f> pts(4);
@@ -145,26 +159,38 @@ bool TestScanner::find_color_card(Mat img, Mat outputImg, vector<vector<Point2f>
 
     dst[0].x = 0;
     dst[0].y = 0;
-    dst[1].x = 160;
+    dst[1].x = 220;
     dst[1].y = 0;
-    dst[2].x = 160;
-    dst[2].y = 710;
+    dst[2].x = 220;
+    dst[2].y = 770;
     dst[3].x = 0;
-    dst[3].y = 710;
+    dst[3].y = 770;
 
     Mat pTrans;
     pTrans = getPerspectiveTransform(pts, dst);
 
-    Mat warped_img;
-    warpPerspective(img, warped_img, pTrans, Size(160, 710));
+        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "calculated transform");
 
-    // 160 x 710
+    Mat warped_img;
+    warpPerspective(img, warped_img, pTrans, Size(220, 770));
+
+        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "warped image");
+
+    // 220 x 770
 
     // clockwise: 23, 42, 15, 67
 
     warped_img.copyTo(outputImg);
 
-    return true;
+        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "copied image");
+
+    ColorCardResult out;
+
+    out.markerCorners = markerCorners;
+    out.markerIds = markerIds;
+    out.success = true;
+
+    return out;
 
     
 }
@@ -212,7 +238,9 @@ bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *v
         double act = box.size.aspectRatio();
         double boxheight = box.size.height;
 
-        if (((2 * min(exp, act)) / (exp + act) > 0.90) && ((2 * min(height, boxheight)) / (height + boxheight) > 0.90))
+        // other section of if  && ((2 * min(height, boxheight)) / (height + boxheight) > 0.90)
+
+        if (((2 * min(exp, act)) / (exp + act) > 0.90))
         {
             boxes.push_back(box);
         }
@@ -237,25 +265,42 @@ bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *v
     return true;
 }
 
-DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput> colors)
+DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput> colors, uchar **encodedImage)
 {
-    Mat outputImg = Mat::zeros(Size(160, 710), img.type());
+    Mat outputImg = Mat::zeros(Size(220, 770), img.type());
 
 
-    vector<vector<Point2f>> markerCorners;
-    vector<int> markerIds;
-    bool result = find_color_card(img, outputImg, markerCorners, markerIds);
+    ColorCardResult result = find_color_card(img, outputImg);
 
-    if (!result)
+    vector<vector<Point2f>> markerCorners = result.markerCorners;
+    vector<int> markerIds = result.markerIds;
+
+    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "markerIds length: %lu", markerIds.size());
+    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "markerCorners length: %lu", markerCorners.size());
+
+    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "found color card");
+
+    for (int i = 0; i < markerIds.size(); i++) {
+        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "Found id: %d", markerIds[i]);
+    }
+
+    if (!result.success)
     {
         for (int i = 0; i < 16; i++) {
             colors[i] = createColorOutput(Scalar(), i, -1.0);
         }
 
-        // uchar *image = img.isContinuous()? img.data: img.clone().data;
+        vector<uchar> buf;
 
-        return create_detection_result(colors, 3);
+        imencode(".png", img, buf);
+
+        *encodedImage = (unsigned char *) malloc(buf.size());
+        for (int i=0; i < buf.size(); i++) (*encodedImage)[i] = buf[i];
+
+        return create_detection_result(colors, buf.size(), 3);
     }
+
+    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "passed if");
 
     int topLeftIdx = searchResult(markerIds, 23);
     int topRightIdx = searchResult(markerIds, 42);
@@ -313,10 +358,19 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
 
     if (!findBoxFromContours(contours, vertices, norm(src2, src3, NORM_L2)))
     {
+        for (int i = 0; i < 16; i++) {
+            colors[i] = createColorOutput(Scalar(), i, -1.0);
+        }
         cerr << "Could not find box" << endl;
-        // uchar *image = img.isContinuous()? img.data: img.clone().data;
 
-        return create_detection_result(colors, 1);
+        vector<uchar> buf;
+
+        imencode(".png", img, buf);
+
+        *encodedImage = (unsigned char *) malloc(buf.size());
+        for (int i=0; i < buf.size(); i++) (*encodedImage)[i] = buf[i];
+
+        return create_detection_result(colors, buf.size(), 1);
     }
 
     vector<Point2f> pts(4);
@@ -339,10 +393,10 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
     Mat pTrans;
     pTrans = getPerspectiveTransform(pts, dst);
 
-    img = match_histograms(img, outputImg, ref);
+    nokeyimg = match_histograms(nokeyimg, outputImg, ref);
 
     Mat warped_img;
-    warpPerspective(img, warped_img, pTrans, Size(40, 1080));
+    warpPerspective(nokeyimg, warped_img, pTrans, Size(40, 1080));
 
     Mat shift;
     pyrMeanShiftFiltering(warped_img, shift, 11, 21);
@@ -723,7 +777,12 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
             cv::line(img, vertices[i], vertices[(i + 1) % 4], cv::Scalar(0, 255, 0), 1, 8);
     }
 
-    uchar *image = img.isContinuous()? img.data: img.clone().data;
+    vector<uchar> buf;
+
+    imencode(".png", shift, buf);
+
+        *encodedImage = (unsigned char *) malloc(buf.size());
+        for (int i=0; i < buf.size(); i++) (*encodedImage)[i] = buf[i];
     
-    return create_detection_result(colors, 0);
+    return create_detection_result(colors, buf.size(), 0);
 }

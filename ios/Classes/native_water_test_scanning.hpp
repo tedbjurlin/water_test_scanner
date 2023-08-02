@@ -31,6 +31,8 @@ struct DetectionResult
     ColorOutput *color15;
     ColorOutput *color16;
 
+    int32_t size;
+
     int32_t exitCode;
     
 };
@@ -39,9 +41,9 @@ extern "C"
 struct ColorOutput createColorOutput(cv::Scalar color, int idx, double value);
 
 extern "C"
-struct DetectionResult *create_detection_result(std::vector<ColorOutput> array, int exit_code);
+struct DetectionResult *create_detection_result(std::vector<ColorOutput> array, int size, int exit_code);
 
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
-struct DetectionResult *native_detect_colors(char *str);
+struct DetectionResult *native_detect_colors(char *str, uchar *key, int length, uchar **encodedImage);
 
 #endif
