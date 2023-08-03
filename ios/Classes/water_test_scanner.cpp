@@ -3,8 +3,6 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/types_c.h>
 
-#include <android/log.h>
-
 using namespace cv;
 using namespace std;
 using namespace cv::aruco;
@@ -118,9 +116,6 @@ struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
 
     detector.detectMarkers(img, markerCorners, markerIds, rejectedCandidates);
 
-    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "Rejected candidates length: %lu", rejectedCandidates.size());
-    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "markerIds length: %lu", markerIds.size());
-
     int topLeftIdx = searchResult(markerIds, 23);
     int topRightIdx = searchResult(markerIds, 42);
     int bottomRightIdx = searchResult(markerIds, 15);
@@ -137,8 +132,6 @@ struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
         topRight = markerCorners.at(topRightIdx).at(1);
         bottomRight = markerCorners.at(bottomRightIdx).at(2);
         bottomLeft = markerCorners.at(bottomLeftIdx).at(3);
-
-        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "found points");
     } else {
         ColorCardResult out;
 
@@ -169,20 +162,14 @@ struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
     Mat pTrans;
     pTrans = getPerspectiveTransform(pts, dst);
 
-        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "calculated transform");
-
     Mat warped_img;
     warpPerspective(img, warped_img, pTrans, Size(220, 770));
-
-        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "warped image");
 
     // 220 x 770
 
     // clockwise: 23, 42, 15, 67
 
     warped_img.copyTo(outputImg);
-
-        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "copied image");
 
     ColorCardResult out;
 
@@ -275,15 +262,6 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
     vector<vector<Point2f>> markerCorners = result.markerCorners;
     vector<int> markerIds = result.markerIds;
 
-    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "markerIds length: %lu", markerIds.size());
-    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "markerCorners length: %lu", markerCorners.size());
-
-    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "found color card");
-
-    for (int i = 0; i < markerIds.size(); i++) {
-        __android_log_print(ANDROID_LOG_DEBUG, "flutter", "Found id: %d", markerIds[i]);
-    }
-
     if (!result.success)
     {
         for (int i = 0; i < 16; i++) {
@@ -299,8 +277,6 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
 
         return create_detection_result(colors, buf.size(), 3);
     }
-
-    __android_log_print(ANDROID_LOG_DEBUG, "flutter", "passed if");
 
     int topLeftIdx = searchResult(markerIds, 23);
     int topRightIdx = searchResult(markerIds, 42);
