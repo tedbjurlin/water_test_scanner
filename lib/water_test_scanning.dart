@@ -180,7 +180,7 @@ typedef NativeDetectColorsFunction = Pointer<NativeDetectorResult> Function(
 
 class ColorStripDetector {
   static Future<ColorDetectionResult> detectColors(
-      String path, Uint8List ref, int width, int height) async {
+      String path, Uint8List ref) async {
     DynamicLibrary nativeColorDetection = _getDynamicLibrary();
 
     print(nativeColorDetection.providesSymbol("native_detect_colors"));
