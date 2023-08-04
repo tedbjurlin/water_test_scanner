@@ -5,6 +5,10 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+// This class corresponds to the ColorOutput struct in the C++ code. It acts as
+// a go-between for the C++ ColorOutput struct and the Dart ColorOutput class.
+// If this is used directly instead of copying the values to a normal dart class,
+// memory leaks are common.
 final class NativeColorOutput extends Struct {
   @Int32()
   external int idx;
@@ -42,6 +46,7 @@ final class NativeColorOutput extends Struct {
   }
 }
 
+// This is the dart version of the ColorOutput class.
 class ColorOutput {
   ColorOutput(
       {required this.idx,
@@ -61,6 +66,7 @@ class ColorOutput {
   double value;
 }
 
+// This converts a Dart:ffi NativeColorOutput to a Dart ColorOutput class.
 ColorOutput fromNativeColorOutput(NativeColorOutput out) {
   return ColorOutput(
       idx: out.idx,
@@ -70,6 +76,8 @@ ColorOutput fromNativeColorOutput(NativeColorOutput out) {
       value: out.value);
 }
 
+// The NativeDetectorResult serves the same purpose as the NativeColorOutput class,
+// but for the ColorDetectionResult class.
 final class NativeDetectorResult extends Struct {
   external Pointer<NativeColorOutput> color1;
   external Pointer<NativeColorOutput> color2;
@@ -166,51 +174,69 @@ class ColorDetectionResult {
   int exitCode;
 }
 
+// The expected type of the C++ class, in Dart types
 typedef DetectColorsFunction = Pointer<NativeDetectorResult> Function(
     Pointer<Utf8> x,
     Pointer<Uint8> key,
     int length,
     Pointer<Pointer<Uint8>> encodedImage);
 
+// The expected type of the C++ class, in Dar:ffi Native types
 typedef NativeDetectColorsFunction = Pointer<NativeDetectorResult> Function(
     Pointer<Utf8> x,
     Pointer<Uint8> key,
     Int32 length,
     Pointer<Pointer<Uint8>> encodedImage);
 
+// The class that manages the color detector.
 class ColorStripDetector {
+  // The dart version of the detect_colors function. It takes the path to the image
+  // from the camera, and a UInt8List of the color card refernce bytes.
   static Future<ColorDetectionResult> detectColors(
       String path, Uint8List ref) async {
+    // first we get the dynamic library of our C++ code.
     DynamicLibrary nativeColorDetection = _getDynamicLibrary();
 
-    print(nativeColorDetection.providesSymbol("native_detect_colors"));
-    print(nativeColorDetection.toString());
+    // These are checks to make sure that the funciton is found.
+    debugPrint(
+        nativeColorDetection.providesSymbol("native_detect_colors").toString());
+    debugPrint(nativeColorDetection.toString());
 
+    // Here we lookup the C++ function and convert it to a Dart function.
     final detectColors = nativeColorDetection.lookupFunction<
         NativeDetectColorsFunction,
         DetectColorsFunction>("native_detect_colors");
 
+    // We allocate an array of unsigned 8-bit integers to store the bytes of our
+    // reference image, and store the bytelist in it.
     final Pointer<Uint8> pointer =
         malloc.allocate<Uint8>(ref.buffer.lengthInBytes);
     final pointerList = pointer.asTypedList(ref.buffer.lengthInBytes);
     pointerList.setAll(0, ref);
 
+    // We allocate 8 bytes of memory with a pointer to our outputImage, and take a
+    // pointer to that allocated memory.
     Pointer<Pointer<Uint8>> encodedImPtr = malloc.allocate(8);
 
+    // detectColors is called with our allocated memory
     NativeDetectorResult detectionResult = detectColors(
             path.toNativeUtf8(), pointer, ref.lengthInBytes, encodedImPtr)
         .ref;
 
-    print(detectionResult.exitCode);
-    print(detectionResult);
+    debugPrint(detectionResult.exitCode.toString());
+    debugPrint(detectionResult.toString());
 
+    // We can now retrieve the outputImage from memory and store it in a list of bytes.
     Pointer<Uint8> cppPointer = encodedImPtr.elementAt(0).value;
     Uint8List imageBytes = cppPointer.asTypedList(detectionResult.size);
 
+    // Copying that bytelist to a seperate bytelist decouples it from the C++ allocated
+    // memory. The prevents segmentation faults when C++ frees the memory.
     Uint8List newImage = Uint8List(imageBytes.length);
     for (int i = 0; i < imageBytes.length; i++) {
       newImage[i] = imageBytes[i];
     }
+    // The image is finally decoded into a flutter Image widget and the remaining pointers are freed.
     Image image = Image.memory(newImage);
 
     malloc.free(pointer);

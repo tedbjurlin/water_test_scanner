@@ -5,8 +5,12 @@
 
 using namespace cv;
 using namespace std;
+// The aruco module is part of opencv-contrib, and requires a custom opencv sdk and include folder,
+// which can be found on the Disco Tray teams. See the WaterQualityTester app wiki on github for 
+// details on how to install it.
 using namespace cv::aruco;
 
+// cumsum calculates a cumulative sum accross the items of a 1-dimensional matrix of floats.
 vector<float> TestScanner::cumsum(Mat src) {
     vector<float> sum(src.size().height);
     sum[0] = src.at<float>(0);
@@ -17,6 +21,8 @@ vector<float> TestScanner::cumsum(Mat src) {
     return sum;
 }
 
+// calculate cdf calulates the cumulative distrobution function of the histogram by
+// normalizing the cumulative sum of the histogram.
 vector<float> TestScanner::calculate_cdf(Mat histogram) {
     vector<float> cdf = cumsum(histogram);
 
@@ -29,6 +35,7 @@ vector<float> TestScanner::calculate_cdf(Mat histogram) {
     return cdf;
 }
 
+// calculate_lookup calculates the lookup table from the src cdf to the ref cdf.
 vector<int> calculate_lookup(vector<float> src, vector<float> ref)
 {
     vector<int> lookup_table(256);
@@ -47,8 +54,11 @@ vector<int> calculate_lookup(vector<float> src, vector<float> ref)
     return lookup_table;
 }
 
+// match_histograms uses the lookup table calculated from the base_ref and current_ref and
+// adjusts the colorbalance of the input_image
 Mat TestScanner::match_histograms(Mat input_image, Mat base_ref, Mat current_ref)
 {
+    // split the images into their color channels
     Mat src_bands[3], base_bands[3], curr_bands[3];
     split(input_image, src_bands);
     split(base_ref, base_bands);
@@ -61,6 +71,7 @@ Mat TestScanner::match_histograms(Mat input_image, Mat base_ref, Mat current_ref
     
     bool uniform = true, accumulate =  false;
 
+    // calculate the histograms of each channel of the base and current refs using the parameters defiend above.
     Mat base_blue_hist, base_green_hist, base_red_hist, curr_blue_hist, curr_green_hist, curr_red_hist;
     calcHist( &base_bands[0], 1, 0, Mat(), base_blue_hist, 1, &histSize, histRange, uniform, accumulate );
     calcHist( &base_bands[1], 1, 0, Mat(), base_green_hist, 1, &histSize, histRange, uniform, accumulate );
@@ -69,6 +80,7 @@ Mat TestScanner::match_histograms(Mat input_image, Mat base_ref, Mat current_ref
     calcHist( &curr_bands[1], 1, 0, Mat(), curr_green_hist, 1, &histSize, histRange, uniform, accumulate );
     calcHist( &curr_bands[2], 1, 0, Mat(), curr_red_hist, 1, &histSize, histRange, uniform, accumulate );
  
+    // calulate the cdfs of the base and current images
     vector<float> src_cdf_blue = calculate_cdf(base_blue_hist);
     vector<float> src_cdf_green = calculate_cdf(base_green_hist);
     vector<float> src_cdf_red = calculate_cdf(base_red_hist);
@@ -76,23 +88,27 @@ Mat TestScanner::match_histograms(Mat input_image, Mat base_ref, Mat current_ref
     vector<float> ref_cdf_green = calculate_cdf(curr_green_hist);
     vector<float> ref_cdf_red = calculate_cdf(curr_red_hist);
  
+    // get the lookup tables between these images.
     vector<int> blue_lookup_table = calculate_lookup(src_cdf_blue, ref_cdf_blue);
     vector<int> green_lookup_table = calculate_lookup(src_cdf_green, ref_cdf_green);
     vector<int> red_lookup_table = calculate_lookup(src_cdf_red, ref_cdf_red);
 
+    // Transform the input image channels by the lookup tables
     vector<Mat> res_bands {src_bands[0].clone(), src_bands[1].clone(), src_bands[2].clone()};
     LUT(src_bands[0], blue_lookup_table, res_bands[0]);
     LUT(src_bands[1], green_lookup_table, res_bands[1]);
     LUT(src_bands[2], red_lookup_table, res_bands[2]);
 
+    // Merge and normalize the resulting image.
     Mat res;
     merge(res_bands, res);
-
     convertScaleAbs(res, res);
 
     return res;
 }
 
+// Searches through an array of integers for a specific one and returns the index.
+// Analogous to Python's .index() function.
 int TestScanner::searchResult(vector<int> arr, int k){
     vector<int>::iterator it;
     it = find(arr.begin(), arr.end(), k);
@@ -102,8 +118,11 @@ int TestScanner::searchResult(vector<int> arr, int k){
         return -1;
 }
 
+// find_color_card uses the aruco markers on the card to identify its location and crop out the rest
+// of the image, to match histograms with later.
 struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
 {
+    // The card has 4 by 4 markers on it, so the 4 by 4 dictionary is needed.
     Dictionary arucoDict = getPredefinedDictionary(DICT_4X4_250);
 
     DetectorParameters parameters = DetectorParameters();
@@ -116,6 +135,8 @@ struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
 
     detector.detectMarkers(img, markerCorners, markerIds, rejectedCandidates);
 
+    // The markers on the card are, in clockwise order, 23, 42, 15, and 67.
+    // These markers allow the image to be correctly matched, regardless of orientation.
     int topLeftIdx = searchResult(markerIds, 23);
     int topRightIdx = searchResult(markerIds, 42);
     int bottomRightIdx = searchResult(markerIds, 15);
@@ -126,6 +147,7 @@ struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
     Point2f bottomRight;
     Point2f bottomLeft;
 
+    // This eliminates any cases where not all of the markers were found.
     if (topLeftIdx != -1 && topRightIdx != -1 && bottomRightIdx != -1 && bottomLeftIdx != -1)
     {
         topLeft = markerCorners.at(topLeftIdx).at(0);
@@ -159,15 +181,15 @@ struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
     dst[3].x = 0;
     dst[3].y = 770;
 
+    // Using a perspective transform, we can warp the image to get a transformed image
+    // of just the color card.
     Mat pTrans;
     pTrans = getPerspectiveTransform(pts, dst);
 
     Mat warped_img;
     warpPerspective(img, warped_img, pTrans, Size(220, 770));
 
-    // 220 x 770
-
-    // clockwise: 23, 42, 15, 67
+    // 220 x 770 is the dimensions of the image of the card used in memory.
 
     warped_img.copyTo(outputImg);
 
@@ -182,6 +204,9 @@ struct ColorCardResult TestScanner::find_color_card(Mat img, Mat outputImg)
     
 }
 
+// converts a scaler in BGR to CIELab
+// The CIELab color space is designed such that the euclidean distances between colors
+// match how humans would compare colors. Closer = more similar.
 Scalar TestScanner::ScalarBGR2Lab(uchar B, uchar G, uchar R) {
     Mat lab;
     Mat bgr(1,1, CV_8UC3, Scalar(B, G, R));
@@ -189,6 +214,9 @@ Scalar TestScanner::ScalarBGR2Lab(uchar B, uchar G, uchar R) {
     return Scalar(lab.data[0], lab.data[1], lab.data[2]);
 }
 
+// This identifies which color in the list of colors for that swatch is the closest to the
+// one read off of the card using the euclidian distance. The matching value from the
+// Varify key is then returned.
 double TestScanner::getClosest(Scalar value, vector<Scalar> key, vector<double> values)
 {
     Mat vmat = Mat::zeros(Size(1, 1), CV_32FC3);
@@ -211,6 +239,8 @@ double TestScanner::getClosest(Scalar value, vector<Scalar> key, vector<double> 
     return values[idx];
 }
 
+// This finds the rectangle most likely to be the color strip from the contours of the image.
+// The rectangle is expected to be of similar height to the color key, and have an aspect ratio of about 1:27.
 bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *vertices, double height){
     
     list<RotatedRect> boxes;
@@ -220,14 +250,15 @@ bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *v
         // Compute minimal bounding box
         cv::RotatedRect box = cv::minAreaRect(Mat(contour));
 
+        // the computed aspect ratio of a strip
         double exp = 0.037037;
 
         double act = box.size.aspectRatio();
-        double boxheight = box.size.height;
+        double boxheight = box.size.height > box.size.width ? box.size.height : box.size.width;
 
-        // other section of if  && ((2 * min(height, boxheight)) / (height + boxheight) > 0.90)
-
-        if (((2 * min(exp, act)) / (exp + act) > 0.90))
+        // increasing the 0.90 in these equations whould decrease the tolerance for variation. I haven't played around
+        // with the values to find the best balance between tolerance and consistency.
+        if (((2 * min(exp, act)) / (exp + act) > 0.90) && ((2 * min(height, boxheight)) / (height + boxheight) > 0.90))
         {
             boxes.push_back(box);
         }
@@ -252,11 +283,13 @@ bool TestScanner::findBoxFromContours(vector<vector<Point>> contours, Point2f *v
     return true;
 }
 
+// detect colors is where it is all put together
+// it returns a DetectionResult pointer, and places the image in the encodedImage pointer
 DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput> colors, uchar **encodedImage)
 {
     Mat outputImg = Mat::zeros(Size(220, 770), img.type());
 
-
+    // find color card is called, and the identified card is placed in outputImg for later use.
     ColorCardResult result = find_color_card(img, outputImg);
 
     vector<vector<Point2f>> markerCorners = result.markerCorners;
@@ -271,10 +304,10 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
         vector<uchar> buf;
 
         imencode(".png", img, buf);
-
+        // will talk about this at the end of the file
         *encodedImage = (unsigned char *) malloc(buf.size());
         for (int i=0; i < buf.size(); i++) (*encodedImage)[i] = buf[i];
-
+        // if no color code is found, exit code 3 is returned.
         return create_detection_result(colors, buf.size(), 3);
     }
 
@@ -307,15 +340,22 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
 
     Mat nokeyimg = img.clone();
 
+    // the key is outlined in green on the image outputted to the app if the test strip is not found.
+    // Currently, the app does not use this image, but it is left as an option if it has educational value.
     line(img, poly_points[0], poly_points[1], Scalar(0, 255, 0), 2);
     line(img, poly_points[1], poly_points[2], Scalar(0, 255, 0), 2);
     line(img, poly_points[2], poly_points[3], Scalar(0, 255, 0), 2);
     line(img, poly_points[3], poly_points[0], Scalar(0, 255, 0), 2);
 
+    // the color card is blacked out on the image to be processed so that it does not cause problems for the
+    // strip finder.
     fillPoly(nokeyimg, poly_points, Scalar());
 
+    // The image is resized to increase processing speed
     resize(nokeyimg, nokeyimg, Size(nokeyimg.size().width / 4, nokeyimg.size().height / 4), INTER_LINEAR);
 
+    // turned black and white and blurred with multiple algorithms to decrease noise while retaining
+    // obvious edges.
     Mat img_gray;
     cvtColor(nokeyimg, img_gray, COLOR_BGR2GRAY);
 
@@ -324,14 +364,18 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
 
     GaussianBlur(img_filtered, img_filtered, Size(5, 5), 0);
 
+    // The canny edge detection algorithm is run to highlight edges in a monochrome image.
     Mat canny;
     Canny(img_filtered, canny, 100, 200);
 
+    // The continous contours are then found in the image. Hopefully, one of these is the
+    // test strip.
     vector<vector<Point>> contours;
     findContours(canny, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
 
     Point2f vertices[4];    
 
+    // No strip is found, exit code 1 is returned.
     if (!findBoxFromContours(contours, vertices, norm(src2, src3, NORM_L2)))
     {
         for (int i = 0; i < 16; i++) {
@@ -368,6 +412,7 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
     dst[3].x = 0;
     dst[3].y = 1080;
 
+    // If the strip is found, it is cropped and transformed onto its own image of only the strip.
     Mat pTrans;
     pTrans = getPerspectiveTransform(pts, dst);
 
@@ -376,9 +421,12 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
     Mat warped_img;
     warpPerspective(nokeyimg, warped_img, pTrans, Size(40, 1080));
 
+    // the pyramid mean shift filter smooths the colors of the image.
     Mat shift;
     pyrMeanShiftFiltering(warped_img, shift, 11, 21);
 
+    // These are the approximated center points of each swatch, in pixels, if the tail of the
+    // strip is down.
     vector<int> centerpoints{
         28,
         88,
@@ -404,6 +452,7 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
 
     vector<Scalar> Lab_colors(16);
 
+    // The swatch locations are iterated through.
     for (size_t i = 0; i < 16; i++)
     {
 
@@ -414,9 +463,11 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
 
         Mat mask = Mat::zeros(1080, 40, CV_8U);
 
+        // A mask of only that swatch is created.
         rectangle(mask, Rect(Point(5, centerpoints[i] - 15), Point(35, centerpoints[i] + 15)), Scalar(255), -1);
 
         Mat centers, data;
+        // copy the image to the data matrix as 32-bit floats
         shift.convertTo(data, CV_32F);    
         // reshape into 3 columns (one per channel, in BGR order) and as many rows as the total number of pixels in img
         data = data.reshape(1, data.total()); 
@@ -442,11 +493,15 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
             }
         }
 
-        // apply k-means    
+        // apply k-means looking for two groups. The colors in the swatch will likely only
+        // be the color of the swatch and the white of the strip backing if the swatch was
+        // off-center
         cv::kmeans(dataMasked, 2, labels, criteria, 10, flags, centers);
 
         vector<int> args(2);
 
+        // caluclate which of the two dominant colors was more dominant. This
+        // will be the swatch color.
         for (int j = 0; j < labels.size().height; j++) {
             args[labels.at<int>(j)]++;
         }
@@ -456,6 +511,7 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
         dataMasked = dataMasked.reshape(3, dataMasked.rows);
         data = data.reshape(3, data.rows);
 
+        // record the more dominant color as both BGR and Lab
         if (args[0] > args[1]) {
             id_colors[i] = Scalar(centers.at<Vec3f>(0)[0], centers.at<Vec3f>(0)[1], centers.at<Vec3f>(0)[2]);
             Lab_colors[i] = ScalarBGR2Lab(centers.at<Vec3f>(0)[0], centers.at<Vec3f>(0)[1], centers.at<Vec3f>(0)[2]);
@@ -465,6 +521,12 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
         }
     }
 
+    // The following two vectors are hardcoded arrays of the colors and values
+    // on the varify key. The lighting that these colors were taken from was the afternoon
+    // sun in august on campus. They are in the Lab colorspace for easy comparison.
+    // the key and values vectors have the same dimensions, so the same indexes apply to the
+    // same items on the key. The outer vector is the chemicals, in order of top to bottom.
+    // The inner vector is the values for each chemical, in left to right order.
     vector< vector< Scalar > > key =
     {
         {
@@ -743,6 +805,8 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
         },
     };
 
+    // find which color is closest to the one in the image for each chemical and create the
+    // ColorOutput structs
     for (int i = 0; i < 16; i++) {
         double value = getClosest(Lab_colors[i], key[i], values[i]);
         colors[i] = createColorOutput(id_colors[i], i, value);
@@ -753,12 +817,23 @@ DetectionResult *TestScanner::detect_colors(Mat img, Mat ref, vector<ColorOutput
             cv::line(img, vertices[i], vertices[(i + 1) % 4], cv::Scalar(0, 255, 0), 1, 8);
     }
 
+    // the following is what allows us to access our output image from dart without memory errors.
+    // first we create a buffer of bytes.
     vector<uchar> buf;
 
+    // Then we encode our image (the exact encoding doesn't matter as long as it is a common one) into
+    // that buffer. The Flutter Image.memory() function only reads images with file encoding.
     imencode(".png", shift, buf);
 
-        *encodedImage = (unsigned char *) malloc(buf.size());
-        for (int i=0; i < buf.size(); i++) (*encodedImage)[i] = buf[i];
+    // Then we allocate the memory for the array manually, to match the size of the buffer.
+    // Finally we write the contents of the buffer to the array.
+    //
+    // Basically, Dart has a pointer to the pointer that starts this array. Because of this,
+    // the array won't get deallocated before Dart can read it. And because dart has a pointer
+    // to a pointer, and not a pointer directly to the array, we can allocate this array to any
+    // size without affecting darts pointer.
+    *encodedImage = (unsigned char *) malloc(buf.size());
+    for (int i=0; i < buf.size(); i++) (*encodedImage)[i] = buf[i];
     
     return create_detection_result(colors, buf.size(), 0);
 }

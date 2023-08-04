@@ -4,6 +4,10 @@
 using namespace cv;
 using namespace std;
 
+// This header is not exposed to the dart code, hence the lack of extern "C" markers.
+
+// This struct is used to get information out of the find_color_card function.
+// In place operations were not transferring, so we are doing this instead.
 struct ColorCardResult {
     bool success;
     vector<vector<Point2f>> markerCorners;
@@ -12,6 +16,8 @@ struct ColorCardResult {
 
 class TestScanner
 {
+    // detect_colors is the only funciton in this water_test_scanner that should be available outside of the file.
+    // The rest are helpers.
     public:
     static DetectionResult *detect_colors(Mat img, Mat ref, vector<ColorOutput> colors, uchar **encodedImage);
 
