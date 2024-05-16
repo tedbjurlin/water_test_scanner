@@ -167,11 +167,38 @@ final class NativeDetectorResult extends Struct {
 
 class ColorDetectionResult {
   ColorDetectionResult(
-      {required this.colors, required this.image, required this.exitCode});
+      {required this.colors, required this.image, required this.imFile, required this.exitCode});
 
   List<ColorOutput> colors;
   Image image;
+  File imFile;
   int exitCode;
+
+  Map<String, dynamic> toFirebaseRecord(
+    String imageLink, dynamic loc, String waterType, DateTime timestamp){
+    return {
+      "image": imageLink,
+      "timestamp": timestamp.microsecondsSinceEpoch,
+      "location": loc,
+      "Water Type": waterType,
+      "pH": colors[0].value,
+      "Hardness": colors[1].value,
+      "Hydrogen Sulfide": colors[2].value,
+      "Iron": colors[3].value,
+      "Copper": colors[4].value,
+      "Lead": colors[5].value,
+      "Manganese": colors[6].value,
+      "Total Chlorine": colors[7].value,
+      "Mercury": colors[8].value,
+      "Nitrate": colors[9].value,
+      "Nitrite": colors[10].value,
+      "Sulfate": colors[11].value,
+      "Zinc": colors[12].value,
+      "Flouride": colors[13].value,
+      "Sodium Chloride": colors[14].value,
+      "Total Alkalinity": colors[15].value
+    }
+  }
 }
 
 // The expected type of the C++ class, in Dart types
@@ -239,6 +266,10 @@ class ColorStripDetector {
     // The image is finally decoded into a flutter Image widget and the remaining pointers are freed.
     Image image = Image.memory(newImage);
 
+    Directory tempDir = await getTemporaryDirectory();
+    File imFile = await new File('${tempDir.path}/image.jpg').create();
+    await imFile.writeAsBytes(newImage)
+
     malloc.free(pointer);
     malloc.free(cppPointer);
     malloc.free(encodedImPtr);
@@ -260,7 +291,7 @@ class ColorStripDetector {
       fromNativeColorOutput(detectionResult.color14.ref),
       fromNativeColorOutput(detectionResult.color15.ref),
       fromNativeColorOutput(detectionResult.color16.ref),
-    ], image: image, exitCode: detectionResult.exitCode);
+    ], image: image, imFile: imFile, exitCode: detectionResult.exitCode);
   }
 
   static DynamicLibrary _getDynamicLibrary() {
