@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:path_provider/path_provider.dart';
 
 // This class corresponds to the ColorOutput struct in the C++ code. It acts as
 // a go-between for the C++ ColorOutput struct and the Dart ColorOutput class.
@@ -197,7 +198,7 @@ class ColorDetectionResult {
       "Flouride": colors[13].value,
       "Sodium Chloride": colors[14].value,
       "Total Alkalinity": colors[15].value
-    }
+    };
   }
 }
 
@@ -267,8 +268,8 @@ class ColorStripDetector {
     Image image = Image.memory(newImage);
 
     Directory tempDir = await getTemporaryDirectory();
-    File imFile = await new File('${tempDir.path}/image.jpg').create();
-    await imFile.writeAsBytes(newImage)
+    File imFile = await File('${tempDir.path}/image.jpg').create();
+    await imFile.writeAsBytes(newImage);
 
     malloc.free(pointer);
     malloc.free(cppPointer);

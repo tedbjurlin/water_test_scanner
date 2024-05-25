@@ -33,3 +33,6 @@ include/
 
 ios/opencv2.framework/
 ios/opencv2.framework/**
+
+opencv2.framework/
+opencv2.framework/**
